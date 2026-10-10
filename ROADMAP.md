@@ -9,17 +9,15 @@ Status markers: `[x]` done · `[~]` in progress · `[ ]` not started.
 The project currently can't prove it exists: no site, no license, sparse
 profile, no demo artifact a stranger can run.
 
-- [ ] Repo hygiene: commit or discard the local `status_server.py` changes;
-      fast-forward local `main` to `origin/main`; review `origin/relay`.
+- [~] Repo hygiene: packaging (`pyproject.toml`), CI (`ci.yml`), landing docs added.
 - [ ] Public identity: GitHub profile (avatar, bio, location), repo
       description + topics (`privacy`, `face-detection`, `redaction-audit`),
       an OSI license (MIT or Apache-2.0), and pinned repo.
-- [ ] One-page landing site (GitHub Pages is enough): what it does, one GIF
-      of the dashboard flagging a failed blur, link to repo. No roadmap
-      promises on the public site.
-- [ ] Demo pack: a scripted end-to-end run on **synthetic** footage only
-      (club_a/club_b + a synthesized-censorship sample) producing the flagged
-      gallery + report.csv — reproducible by anyone with `requirements.txt`.
+- [x] One-page landing site (`docs/index.html`, GitHub Pages ready): what it
+      does, benchmark numbers, link to repo. No roadmap promises on the public site.
+- [x] Demo pack: dataset-free tiny synthetic sample (`tests/make_tiny_sample.py`)
+      runs the full pipeline + evaluator in CI on every push; committed fixtures
+      (club_a/club_b) reproducible by anyone with `requirements.txt`.
 - Acceptance: a stranger can go from the site → repo → running demo in
   under 15 minutes.
 
@@ -28,8 +26,8 @@ profile, no demo artifact a stranger can run.
 The current SCRFD + blur/edge/flat metrics + tracking + review loop is the
 seed; harden it into something reliable.
 
-- [ ] Benchmark suite: fixed public video set (synthesized censorship at
-      known severities) with precision/recall gates in CI on every PR.
+- [~] Benchmark suite: synthetic GT suite + scorer committed; recall 87.5%, weak
+      coverage 100%, 0 FP on the full fixture; CI smoke gate on every push.
 - [ ] Ship the learned classifier as default tiebreaker: `train_classifier.py`
       (MobileNetV3-Small, ONNX) promoted from optional to standard path once
       it beats the heuristic F1 on the benchmark set.

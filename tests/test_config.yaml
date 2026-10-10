@@ -2,10 +2,10 @@
 # Run `python calibrate.py` on a sample clip before trusting these thresholds.
 
 paths:
-  input_dir: testdata/videos        # folder scanned recursively for videos
-  output_dir: testdata/audit_out     # flagged frames + reports land here
-  checkpoint_db: testdata/audit_out/checkpoints.sqlite
-  learned_params: testdata/audit_out/learned_params.json  # written by learn.py tune
+  input_dir: /tmp/tiny        # folder scanned recursively for videos
+  output_dir: /tmp/tiny_out     # flagged frames + reports land here
+  checkpoint_db: /tmp/tiny_out/checkpoints.sqlite
+  learned_params: /tmp/tiny_out/learned_params.json  # written by learn.py tune
 
 # Human review queue: uncertain calls go to a person instead of being auto-judged.
 #   low_face_conf   — face_confidence below threshold: "is this even a face?"
@@ -14,8 +14,8 @@ review_queue:
   enabled: true
   face_confidence_threshold: 0.50
   blur_margin: 0.25
-  db: testdata/audit_out/review.sqlite
-  crops_dir: testdata/audit_out/review   # crops/ + frames/ for the review UI
+  db: /tmp/tiny_out/review.sqlite
+  crops_dir: /tmp/tiny_out/review   # crops/ + frames/ for the review UI
   server_port: 8471
 
 video:
@@ -27,13 +27,13 @@ detection:
   model_pack: "buffalo_l"         # InsightFace bundle (SCRFD-500M detector)
   det_size: [640, 640]            # detection runs downscaled; blur metrics use full res
   det_thresh: 0.4                 # face detection confidence cutoff (compressed footage scores low)
-  use_gpu: true                   # onnxruntime CUDA; falls back to CPU automatically
+  use_gpu: false                   # onnxruntime CUDA; falls back to CPU automatically
   min_face_px: 28                 # skip faces smaller than this (can't judge blur fairly)
 
 blur_check:
-  # CENSORED when edge_density < edge_threshold (gaussian/defocus), or when
-  # flat_frac > pixel_flat_threshold AND laplacian_var > pixel_lap_threshold
-  # (mosaic/pixelation = flat blocks + razor boundaries). Tune with learn.py tune.
+  # A face counts as CENSORED when edge_density < edge_threshold (gaussian/
+  # defocus), or when flat_frac > pixel_flat_threshold AND laplacian_var >
+  # pixel_lap_threshold (mosaic/pixelation). Tune with learn.py tune.
   edge_threshold: 0.012
   pixel_flat_threshold: 0.65   # above (with lap) -> pixelated/mosaic censorship
   pixel_lap_threshold: 60.0

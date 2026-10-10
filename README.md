@@ -1,145 +1,174 @@
-# Veilaudit
+<div align="center">
 
-Offline batch pipeline that audits folders of video for **improperly censored (unblurred) faces**.
-Everything runs locally — InsightFace/ONNX face detection, classic CV blur metrics,
-OpenCV video I/O. No cloud APIs, no content filters, no data leaves the machine.
+# VeilAudit
+
+**Offline audit pipeline that finds improperly censored (unblurred) faces in video.**
+
+*Because a failed redaction is worse than no redaction at all.*
+
+[![CI](https://github.com/emalinow-ctrl/veilaudit/actions/workflows/ci.yml/badge.svg)](https://github.com/emalinow-ctrl/veilaudit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-ff5fa8.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-9d6bff.svg)](pyproject.toml)
+[![ Runs offline](https://img.shields.io/badge/offline-100%25-7dedb2.svg)](#privacy)
+
+</div>
+
+---
+
+Redaction pipelines fail. Blur corners get cut, pixelation passes on a downscaled
+check, black bars don't cover motion, and a single sharp frame of an identifiable
+face survives an otherwise careful censorship pass. **VeilAudit watches the watcher**:
+it scans folders of video locally, finds every face, and flags the ones a censoring
+pass failed to actually censor — per person, across time, with evidence frames and a
+full audit report.
+
+Everything runs on your machine. No cloud APIs, no content filters, no data leaves
+the box. After the one-time model download the machine can be air-gapped.
+
+## Why not just check "is it blurry"?
+
+Because naive intuition fails on real footage (see [`blurcheck.py`](blurcheck.py)):
+
+| trap | what naive checks miss |
+|---|---|
+| **motion blur vs censor blur** | a moving *sharp* face scores like a blurred one on a single frame |
+| **pixelation** | pixelated faces have *high* edge energy — they pass "is it sharp?" checks |
+| **the neighbour problem** | an unblurred face next to a blurred one inherits its verdict without per-person tracking |
+| **downscaled checks** | blur measured on a 640px detection frame disappears; VeilAudit always measures on the native-res crop |
+| **black-box censor bars** | look like "no face" to naive checks; VeilAudit treats solid masks as censored-by-design failures |
 
 ## How it works
 
-1. **Decode** each video with OpenCV/FFmpeg, sampling every Nth frame (configurable).
-2. **Detect** faces with InsightFace's SCRFD detector (`buffalo_l` bundle, ONNX Runtime).
-   Detection runs on a downscaled frame; blur is always measured on the **full-resolution** crop.
-3. **Judge** each face: Laplacian variance + FFT high-frequency ratio + edge density,
-   plus a solid-mask check (black bars). A face failing the blur check is "unblurred".
-4. **Per-person tracking**: each distinct face gets a stable track ID (IoU tracker,
-   `tracker.py`) with its own sharp/blurred vote history. A person is flagged only
-   after looking sharp in `min_fail_frames` of their recent sampled frames — so a
-   blurred face never masks (or inherits the verdict of) an unblurred face next to
-   it, and motion blur can't condemn someone on a single frame. Faces that look
-   sharp but aren't confirmed yet are drawn orange ("REVIEW #id").
-5. **Export** only flagged frames (red boxes on unblurred faces, labeled with track
-   IDs) and write `report.csv` / `report.json`: video, frame, timestamp, track IDs,
-   boxes, metric values — plus `<video>_tracks.json` with a per-person summary
-   (first/last seen, sharp vs censored counts, confirmed verdict).
-6. **Checkpoint** every video's frame position to SQLite — Ctrl-C or crash resumes cleanly.
-
-## Setup
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-# NVIDIA GPU? swap the CPU runtime for the GPU one (never install both):
-#   pip uninstall onnxruntime && pip install onnxruntime-gpu
+```mermaid
+flowchart LR
+    A[video folder] --> B[decode + sample every Nth frame]
+    B --> C[InsightFace SCRFD detection<br/>on downscaled frame]
+    C --> D[blur metrics on FULL-RES crop<br/>Laplacian · FFT high-freq · edge density · flat-block · solid-mask]
+    D --> E{verdict}
+    E -->|fails blur check| F[flag: unblurred face]
+    E -->|borderline| G[human review queue]
+    E -->|censored ok| H[pass]
+    C --> I[per-person IoU tracker<br/>stable track IDs + vote history]
+    I --> F
+    F --> J[flagged frame exports<br/>report.csv / report.json / tracks.json]
+    G --> J
 ```
 
-First run downloads the InsightFace model pack once (~300 MB → `~/.insightface`);
-after that the machine can be fully air-gapped.
+1. **Decode** each video with OpenCV, sampling every Nth frame (configurable).
+2. **Detect** faces with InsightFace's SCRFD (`buffalo_l`, ONNX Runtime, CPU or CUDA).
+3. **Judge** each face on the **full-resolution** crop: Laplacian variance, FFT
+   high-frequency ratio, edge density, flat-block fraction (pixelation) and a
+   solid-mask check (black bars / stickers).
+4. **Track** every distinct person with a stable ID (`tracker.py`) and their own
+   sharp/blurred vote history — a person is flagged only after failing in
+   `min_fail_frames` of their recent sampled frames, so motion blur can't condemn
+   someone on one frame and a blurred neighbour can't mask an unblurred face.
+5. **Ask a human** when unsure: borderline faces land in a review queue
+   (`review_server.py`) instead of being silently guessed.
+6. **Export** only flagged frames (red boxes + track IDs) plus `report.csv`,
+   `report.json` and per-person `<video>_tracks.json`.
+7. **Checkpoint** every video's position to SQLite — Ctrl-C or crash resumes cleanly.
 
-## Calibrate first (important)
+## Benchmarks
 
-Blur thresholds depend on your source quality. Don't trust the defaults blindly:
+Synthetic ground-truth suite: procedurally composited actors with *known* blur
+schedules (blur → sharp → blur, weak censoring, pixelation), scored against the
+ground truth with [`tests/evaluate.py`](tests/evaluate.py).
+
+| suite | event recall | weak-censor coverage | false-positive frames |
+|---|---|---|---|
+| full fixture (2 × 45 s, 12 actors) | **87.5 %** (7/8) | **100 %** (2/2) | **0** |
+| tiny CI smoke (12 s, 2 actors) | **100 %** (2/2) | — | **0** |
+
+Uncertain calls are routed to review rather than guessed — every number above
+ships with its human-review load shown in `stats.json`.
+
+## Quickstart
+
+```bash
+git clone https://github.com/emalinow-ctrl/veilaudit
+cd veilaudit
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# first run downloads the InsightFace pack once (~300 MB → ~/.insightface)
+python main.py --input-dir /data/videos --output-dir /data/audit_out --workers 4
+```
+
+Or as a library / CLI (after `pip install .`):
+
+```bash
+veilaudit --input-dir /data/videos --output-dir /data/audit_out
+```
+
+### Calibrate first
+
+Blur thresholds depend on source quality — don't trust the defaults blindly:
 
 ```bash
 python calibrate.py --video /data/videos/sample.mp4 --out calib_out --max-faces 400
 ```
 
-This dumps face crops named like `f000123_i0_LAP0042_HF0.031_ED0.012.jpg` plus a
-`metrics.csv`. Eyeball which crops you consider blurred vs sharp, find the
-Laplacian / HF-ratio values that separate them, and set
-`blur_check.laplacian_threshold` / `blur_check.hfratio_threshold` in `config.yaml`.
+Eyeball the dumped face crops, find the Laplacian / HF-ratio values that separate
+blurred from sharp *on your footage*, and set them in `config.yaml`.
 
-## Run
+### Tune automatically
 
 ```bash
-python main.py --input-dir /data/videos --output-dir /data/audit_out --workers 4
-# resume is automatic; --reset clears checkpoints and reprocesses everything
+python learn.py tune --report /data/audit_out/report.json
 ```
 
-## Human review queue & learning
+## The review loop
 
-The pipeline doesn't guess when it's unsure — it asks you:
+The pipeline doesn't guess when it's unsure. Borderline faces queue for human
+review (`review_server.py`, port 8471); accepted/denied labels feed
+[`learn.py`](learn.py), which tunes thresholds and trains an optional MobileNetV3
+classifier tiebreaker (`train_classifier.py`) that is promoted to the default path
+once it beats the heuristic F1. Label → retrain → redeploy, offline.
 
-- **Face confidence.** Every detection gets a `face_confidence` score (detector
-  score × 5-point landmark geometry plausibility). Below 0.80
-  (`review_queue.face_confidence_threshold`), the crop goes to the review queue
-  instead of being auto-judged.
-- **Borderline blur.** If a blur metric lands within `blur_margin` (25%) of its
-  threshold, the pipeline's blurred/sharp guess goes to the queue for confirmation.
-
-Review in the browser (stdlib only, no dependencies):
+## Demo in 15 minutes
 
 ```bash
-python review_server.py              # -> http://127.0.0.1:8471
+# 1. synthetic fixtures are committed — run the audit on them
+python main.py --config tests/test_config.yaml --input-dir testdata/videos -o demo_out
+
+# 2. score against the committed ground truth
+python tests/evaluate.py --gt testdata/ground_truth --out demo_out --review-db demo_out/review.sqlite
+
+# 3. look at the flagged frames
+open demo_out/            # red boxes = censorship failures, with track IDs
 ```
-
-Keyboard-driven: `F` = contains a face, `N` = not a face, then `B`/`H` for
-blurred vs. sharp. Each item stores the crop, a frame thumbnail, the pipeline's
-guess, and the features behind it.
-
-Then make the pipeline learn from your corrections:
-
-```bash
-python learn.py report               # how well current thresholds match your labels
-python learn.py tune                  # fit face-confidence mapping + blur thresholds
-                                      # -> learned_params.json
-python main.py --reset ...            # re-run so learned params apply everywhere
-```
-
-`tune` fits a tiny logistic regression on your face/not-face labels (replacing
-the heuristic confidence once you have 50+ labels) and grid-searches the blur
-thresholds for best F1 on your blurred/sharp labels (30+ needed). `main.py`
-picks up `learned_params.json` automatically and logs what it applied.
-
-To feed corrections into the v2 classifier instead:
-
-```bash
-python learn.py export-dataset --out data/review_labels
-# -> face_sharp/ face_blurred/ not_face/ — merge into train_classifier.py training
-```
-
-Outputs under the output dir:
-
-- `<video_stem>/frame_00000123_t12.40s.jpg` — flagged frames, red = unblurred face
-- `report.csv` — one row per flagged frame: video, frame, timestamp, boxes, metrics
-- `report.json` — same, structured
-- `stats.json` — per-video counts (frames, faces seen/failed/skipped)
-- `checkpoints.sqlite` — resume state
-
-## Config reference (`config.yaml`)
-
-| Section | Key knobs |
-|---|---|
-| `video` | `sample_every_n_frames` (2–5), `checkpoint_every_n_frames` |
-| `detection` | `det_size`, `det_thresh`, `use_gpu`, `min_face_px` (skip tiny faces) |
-| `blur_check` | `laplacian_threshold`, `hfratio_threshold`, per-track `min_fail_frames`/`window_frames` |
-| `tracking` | `enabled`, `iou_thresh`, `max_missed_frames` |
-| `export` | box drawing, JPEG quality |
-| `run` | `workers` (one process per video) |
-
-## Performance
-
-- SCRFD at 640 px does ~15–30 fps on a modern CPU; sampling every 3rd frame
-  processes a 1-hour video in roughly 10–20 min on CPU, near real-time on GPU.
-- Multiprocessing is per-video; one detector instance per worker.
-
-## Upgrading to a learned classifier
-
-If hand-tuned metrics are too noisy, `train_classifier.py` trains a MobileNetV3-Small
-binary classifier on public face crops with *synthesized* censorship
-(gaussian blur, mosaic pixelation, black bars) — no real footage needed for training —
-and exports ONNX. The module docstring shows the ~10 lines needed to plug it into
-`blurcheck.py` as a tiebreaker.
-
-## Limitations (honest)
-
-- Faces smaller than `min_face_px` are skipped and counted, not judged.
-- Heavy motion blur / compression artifacts can mimic censorship blur; temporal
-  smoothing mitigates but doesn't eliminate this.
-- MP4 resume seeks are keyframe-approximate — fine for sparse sampling, not frame-exact.
-- Partial occlusions (hand over face) are not censorship; only blur/pixelation/masking
-  of detected faces is judged.
 
 ## Privacy
 
-All processing is local. Flagged-frame exports contain faces by design — treat the
-output directory with the same care as the source footage.
+- **100 % offline.** One-time model download, then air-gap-friendly.
+- **Evidence frames only.** Exports contain flagged frames — faces the censoring
+  *failed* to protect — never full-video dumps.
+- **Your videos never leave the machine.** No telemetry, no accounts, no APIs.
+- Test fixtures are synthetic; user footage is gitignored by policy.
+
+## Project layout
+
+```
+main.py            pipeline entry point (parallel per-video workers, resume)
+detector.py        SCRFD wrapper + learned face-confidence
+blurcheck.py       the blur/pixelation/mask metrics (the heart of the audit)
+tracker.py         per-person IoU tracker with verdict vote history
+exporter.py        flagged-frame exports + reports
+review_*.py        human review queue (SQLite + local web UI)
+learn.py           threshold tuning + review-label learning
+calibrate.py       dump face crops for manual threshold calibration
+train_classifier.py optional MobileNetV3 tiebreaker
+tests/             synthetic fixtures, GT generator, tiny CI sample, scorer
+```
+
+## Roadmap
+
+See [`ROADMAP.md`](ROADMAP.md) — from "working pipeline" to "censorship-integrity
+platform": benchmark gates in CI, learned classifier as default, hard cases
+(pixelation on moving faces, partial boxes, inpainting), and the review-loop
+label→retrain→redeploy cycle.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

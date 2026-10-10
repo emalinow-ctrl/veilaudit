@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Syntax check all modules
+        run: python -m compileall -q .
+
+      - name: Unit tests (no model download needed)
+        run: python -m pytest tests/test_units.py -q
+
+      - name: Smoke test — synthetic video through the full pipeline
+        run: |
+          python tests/make_tiny_sample.py --out /tmp/smoke --gt /tmp/smoke_gt
+          python main.py --config tests/test_config.yaml --input-dir /tmp/smoke --output-dir /tmp/smoke_out --workers 1
+          python tests/evaluate.py --gt /tmp/smoke_gt --out /tmp/smoke_out --review-db /tmp/smoke_out/review.sqlite
+
+      - name: CLI entry point exists
+        run: python -c "import main; assert main.app is not None"

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VeilAudit — find every face your censoring pipeline missed</title>
+<meta name="description" content="Offline audit pipeline that finds improperly censored (unblurred) faces in video. 100% local. InsightFace detection, classic CV blur metrics, per-person tracking, human review loop.">
+<style>
+  :root { --ink:#e8e6e3; --bg:#0d0d0f; --accent:#d97757; --card:#161618; --line:#2a2a2e; --muted:#9b9793; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--ink); font-family:ui-sans-serif,system-ui,'Segoe UI',sans-serif; line-height:1.6; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .wrap { max-width:980px; margin:0 auto; padding:0 24px; }
+  nav { display:flex; justify-content:space-between; align-items:center; padding:22px 0; }
+  nav .logo { font-weight:800; font-size:18px; letter-spacing:-0.02em; }
+  nav .logo span { color:var(--accent); }
+  .hero { padding:64px 0 40px; }
+  .hero h1 { font-size:44px; line-height:1.15; letter-spacing:-0.03em; font-weight:800; max-width:760px; }
+  .hero h1 em { color:var(--accent); font-style:normal; }
+  .hero p { color:var(--muted); font-size:18px; max-width:640px; margin-top:18px; }
+  .cta { display:inline-block; margin:26px 18px 0 0; padding:12px 22px; border-radius:10px; font-weight:600; }
+  .cta.primary { background:var(--accent); color:#fff; }
+  .cta.ghost { border:1px solid var(--line); color:var(--ink); }
+  .badges { margin-top:26px; display:flex; gap:8px; flex-wrap:wrap; }
+  .badge { font-size:12.5px; border:1px solid var(--line); border-radius:999px; padding:4px 12px; color:var(--muted); }
+  .badge b { color:var(--ink); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:14px; margin:48px 0; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:22px; }
+  .card h3 { font-size:16px; margin-bottom:8px; }
+  .card p { color:var(--muted); font-size:14.5px; }
+  .card .num { color:var(--accent); font-size:13px; font-weight:800; letter-spacing:1px; }
+  pre { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px 20px;
+    overflow-x:auto; font-size:13.5px; font-family:ui-monospace,Menlo,monospace; line-height:1.7; }
+  pre .c { color:var(--muted); }
+  .metrics { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:40px 0; text-align:center; }
+  .metric { border:1px solid var(--line); border-radius:14px; padding:24px 10px; background:var(--card); }
+  .metric .v { font-size:34px; font-weight:800; color:var(--accent); }
+  .metric .l { color:var(--muted); font-size:13px; margin-top:4px; }
+  section { padding:36px 0; }
+  h2 { font-size:26px; letter-spacing:-0.02em; margin-bottom:16px; }
+  footer { border-top:1px solid var(--line); padding:28px 0 48px; color:var(--muted); font-size:13.5px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; }
+  @media (max-width:640px){ .metrics{grid-template-columns:1fr} .hero h1{font-size:32px} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav>
+    <div class="logo">Veil<span>Audit</span></div>
+    <div><a href="https://github.com/emalinow-ctrl/veilaudit">GitHub ↗</a></div>
+  </nav>
+
+  <div class="hero">
+    <h1>Find every face your censoring pipeline <em>missed</em>.</h1>
+    <p>VeilAudit is an offline pipeline that audits folders of video for improperly
+    censored faces — before a failed redaction becomes someone's problem. Detection,
+    blur forensics, per-person tracking and a human review loop. All local, all the time.</p>
+    <a class="cta primary" href="https://github.com/emalinow-ctrl/veilaudit#quickstart">Get started</a>
+    <a class="cta ghost" href="https://github.com/emalinow-ctrl/veilaudit">Read the source</a>
+    <div class="badges">
+      <span class="badge">🔒 <b>100% offline</b> — air-gap friendly</span>
+      <span class="badge">🎬 <b>video-first</b> — sampled, tracked, evidence frames</span>
+      <span class="badge">🧠 <b>learns</b> — review labels tune the thresholds</span>
+      <span class="badge">⚖️ MIT</span>
+    </div>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="v">87.5%</div><div class="l">censorship-failure recall<br/>on the synthetic GT suite</div></div>
+    <div class="metric"><div class="v">0</div><div class="l">false-positive frames<br/>flagged on clean footage</div></div>
+    <div class="metric"><div class="v">100%</div><div class="l">weak-censor coverage<br/>inadequate blur never passes silently</div></div>
+  </div>
+
+  <div class="grid">
+    <div class="card"><div class="num">01 — DETECT</div><h3>Every face, every sampled frame</h3>
+      <p>InsightFace SCRFD (buffalo_l) on a downscaled frame for speed; blur is always
+      measured on the native-resolution crop so compression can't hide the truth.</p></div>
+    <div class="card"><div class="num">02 — FORENSICS</div><h3>Metrics that survive real footage</h3>
+      <p>Laplacian variance, FFT high-frequency ratio, edge density, flat-block analysis
+      for pixelation, solid-mask checks for black bars. Motion blur vs censor blur, told apart.</p></div>
+    <div class="card"><div class="num">03 — TRACK</div><h3>Per-person verdicts, not per-frame</h3>
+      <p>A stable ID per person with a vote history. One lucky sharp frame can't condemn
+      you, and a blurred neighbour can't cover for you.</p></div>
+    <div class="card"><div class="num">04 — HUMANS</div><h3>A review queue, not a guess</h3>
+      <p>Borderline calls go to a local review UI. Labels feed back through learn.py:
+      thresholds retune, an optional MobileNetV3 tiebreaker improves. Label → retrain → redeploy.</p></div>
+    <div class="card"><div class="num">05 — EVIDENCE</div><h3>Reports a human can act on</h3>
+      <p>Flagged frames with red boxes and track IDs, report.csv/report.json with metric
+      values, per-person summaries. SQLite checkpoints: crash, Ctrl-C, resume.</p></div>
+    <div class="card"><div class="num">06 — OFFLINE</div><h3>Your footage never leaves the machine</h3>
+      <p>No cloud APIs, no telemetry, no accounts. One-time model download, then pull the
+      network cable. Synthetic fixtures only in the repo — user video is gitignored.</p></div>
+  </div>
+
+  <section>
+    <h2>Run it</h2>
+<pre><span class="c"># audit a folder of video (first run downloads the model pack once)</span>
+python main.py --input-dir /data/videos --output-dir /data/audit_out --workers 4
+
+<span class="c"># score against ground truth / your own labels</span>
+python tests/evaluate.py --gt gt/ --out audit_out
+
+<span class="c"># calibrate thresholds to YOUR footage before trusting defaults</span>
+python calibrate.py --video /data/videos/sample.mp4 --out calib_out</pre>
+  </section>
+
+  <footer>
+    <div>VeilAudit — censorship-integrity tooling. Built for the people who have to trust the redaction.</div>
+    <div><a href="https://github.com/emalinow-ctrl/veilaudit">github.com/emalinow-ctrl/veilaudit</a> · MIT</div>
+  </footer>
+</div>
+</body>
+</html>

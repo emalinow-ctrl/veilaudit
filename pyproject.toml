@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "veilaudit"
+version = "0.2.0"
+description = "Offline audit pipeline that finds improperly censored (unblurred) faces in video — InsightFace detection, classic CV blur metrics, per-person tracking, human review queue."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "emalinow-ctrl" }]
+keywords = ["privacy", "face-detection", "redaction", "censorship-audit", "video", "onnx", "insightface"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Legal Industry",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Security",
+]
+dependencies = [
+  "opencv-python-headless>=4.8.0",
+  "numpy>=1.24.0,<2",
+  "insightface>=0.7.3",
+  "onnxruntime>=1.16.0",
+  "pyyaml>=6.0",
+  "typer>=0.9.0",
+  "tqdm>=4.65.0",
+]
+
+[project.optional-dependencies]
+gpu = ["onnxruntime-gpu>=1.16.0"]
+classifier = ["torch>=2.0.0", "torchvision>=0.15.0"]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+veilaudit = "main:app"
+
+[tool.setuptools]
+py-modules = [
+  "main", "blurcheck", "db", "detector", "exporter", "learn",
+  "review_server", "review_store", "status_server", "tracker",
+  "train_classifier", "utils",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
